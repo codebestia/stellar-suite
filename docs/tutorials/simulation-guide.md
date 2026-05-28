@@ -5,126 +5,137 @@ Welcome to the Stellar Suite IDE Simulation Guide! This interactive tutorial wil
 ## Prerequisites
 
 Before you begin, ensure you have:
-- A Stellar Suite IDE account (or access to the IDE)
-- Basic understanding of smart contract concepts
-- A sample smart contract ready for simulation (we'll provide one if needed)
 
-> 💡 **Tip:** If you don't have a contract ready, click [here](https://ide.stellarsuite.dev/?contract=sample&mode=simulate) to open the IDE with a pre-loaded sample contract.
+- **Stellar Suite IDE access** – available at [stellar-suite.dev/ide](https://stellar-suite.dev/ide)
+- **A Stellar wallet** – for signing authentication operations during simulation
+- **A sample Soroban contract** – we'll provide one if you don't have your own ready
 
-## Step-by-Step Walkthrough
+> 💡 **Tip:** If you need a contract to practice with, [open the IDE with a pre-loaded sample contract](https://stellar-suite.dev/ide?contract=hello_world_contract&mode=simulate&step=1).
+
+## Walkthrough
 
 ### Step 1: Opening the Simulation Environment
 
-To start simulating your contract, navigate to the Simulation panel in the IDE.
+To start simulating your contract, first access the simulation panel in the IDE. The simulation environment provides a sandboxed space where you can test contract invocations without any on-chain effects.
 
-1. Open the Stellar Suite IDE: [Open IDE](https://ide.stellarsuite.dev)
-2. In the IDE, locate the **Simulation** tab in the bottom panel (or press `Ctrl+Shift+S`).
-3. Click the **New Simulation** button to create a simulation session.
+1. Navigate to the Stellar Suite IDE in your browser
+2. Click the **Simulation** tab in the left sidebar
+3. Select **New Simulation** to create a fresh simulation session
 
-> 🔗 **Deep-link:** [Open IDE with Simulation Panel Ready](https://ide.stellarsuite.dev/?panel=simulation&mode=simulate)
+[Open in IDE →](https://stellar-suite.dev/ide?contract=hello_world_contract&mode=simulate&step=1)
 
 ### Step 2: Loading Your Contract
 
-You can load a contract into the simulation environment in several ways:
+Load a Soroban contract into the simulation environment. You can import your own contract or use one of the built-in templates.
 
-- **From File:** Click the **Load Contract** button and select your `.sol` or `.rs` file.
-- **From GitHub:** Use the **Import from GitHub** option and enter a repository URL.
-- **Use Sample:** For this tutorial, we'll use the provided ERC-20 sample contract.
+For this guide, we'll use the Hello World contract template:
 
-> 🔗 **Deep-link:** [Load Sample ERC-20 Contract](https://ide.stellarsuite.dev/?contract=erc20-sample&mode=simulate)
+1. In the simulation panel, click **Load Contract**
+2. Select **Templates** → **Getting Started** → **Hello World**
+3. The contract will appear in the editor with syntax highlighting
 
-Once loaded, your contract will appear in the editor pane with syntax highlighting and error checking.
+[Open in IDE →](https://stellar-suite.dev/ide?contract=hello_world_contract&mode=simulate&step=2)
 
-### Step 3: Configuring Simulation Parameters
+### Step 3: Setting Simulation Parameters
 
-Before running the simulation, configure the parameters to match your testing scenario:
+Configure the parameters for your simulation. The Hello World contract's `hello` function takes a single `to` parameter of type `Symbol`.
 
-1. **Network Selection:** Choose the target network (e.g., Ethereum Mainnet, Polygon, or a local testnet).
-2. **Block Number:** Specify the starting block number for the simulation (default is latest).
-3. **Account Balance:** Set the starting balance for the contract deployer and any test accounts.
-4. **Environment Variables:** Configure any required environment variables (e.g., token addresses, oracle prices).
+1. Select the `hello` function from the dropdown
+2. For the `to` parameter, enter `world` (without quotes)
+3. Verify the parameters look correct in the preview panel
 
-> 🔗 **Deep-link:** [Open Simulation Config Panel](https://ide.stellarsuite.dev/?panel=simulation-config&mode=simulate)
+```rust
+// The hello function signature
+pub fn hello(env: Env, to: Symbol) -> Symbol
+```
 
-### Step 4: Deploying the Contract
+[Open in IDE →](https://stellar-suite.dev/ide?contract=hello_world_contract&mode=simulate&step=3)
 
-With parameters set, deploy your contract to the simulated environment:
+### Step 4: Running Your First Simulation
 
-1. Click the **Deploy** button in the Simulation panel.
-2. Review the deployment transaction details in the preview modal.
-3. Confirm deployment by clicking **Confirm Deploy**.
+Execute the simulation and observe the results. This step shows how the IDE processes your transaction and displays the return value.
 
-The IDE will simulate the deployment transaction and display:
-- Transaction hash
-- Gas used
-- Contract address
-- Any events emitted during deployment
+1. Click the **Run Simulation** button (play icon)
+2. Watch the progress indicator as the transaction executes
+3. View the **Return Value** in the results panel: `["Hello", "world"]`
 
-> 🔗 **Deep-link:** [Simulate Contract Deployment](https://ide.stellarsuite.dev/?action=deploy&mode=simulate)
+The simulation panel will display:
+- Transaction status (success/failure)
+- Resource usage (CPU instructions, memory)
+- Any events emitted during execution
 
-### Step 5: Interacting with Deployed Contracts
+[Open in IDE →](https://stellar-suite.dev/ide?contract=hello_world_contract&mode=simulate&step=4)
 
-After deployment, you can interact with your contract's functions:
+### Step 5: Simulating Token Transfer
 
-1. In the **Contract Interactions** section, select the deployed contract from the dropdown.
-2. Choose a function to call (e.g., `mint`, `transfer`, `balanceOf`).
-3. Enter the required parameters for the function call.
-4. Click **Call** to execute the function in the simulated environment.
+Now let's simulate a more complex interaction using a token contract. This demonstrates how to work with contracts that transfer value.
 
-The simulation will show:
-- Return values
-- Gas used
-- State changes
-- Events emitted
+1. Switch to the **Token Contract** template (or load `token_transfer` if you have your own)
+2. Select the `transfer` function
+3. Enter the required parameters:
+   - `from`: the sender's address
+   - `to`: the recipient's address  
+   - `amount`: the amount to transfer
 
-> 🔗 **Deep-link:** [Simulate Function Call](https://ide.stellarsuite.dev/?action=call&function=mint&mode=simulate)
+```rust
+// Transfer function
+pub fn transfer(env: Env, from: Address, to: Address, amount: i128) -> bool
+```
 
-### Step 6: Advanced Simulation Features
+[Open in IDE →](https://stellar-suite.dev/ide?contract=token_transfer&mode=simulate&step=5)
 
-Explore these advanced features to thoroughly test your contract:
+### Step 6: Testing Multi-Signature Vault
 
-- **Forking Mainnet:** Simulate against real-world state by forking a live network.
-  > 🔗 [Fork Mainnet Simulation](https://ide.stellarsuite.dev/?fork=mainnet&mode=simulate)
-  
-- **Debugging:** Step through transactions with the built-in debugger.
-  > 🔗 [Open Debugger](https://ide.stellarsuite.dev/?panel=debugger&mode=simulate)
-  
-- **Gas Profiling:** Analyze gas usage for optimization.
-  > 🔗 [Gas Profiler](https://ide.stellarsuite.dev/?panel=gas-profiler&mode=simulate)
-  
-- **Event Monitoring:** Listen for and inspect contract events in real-time.
-  > 🔗 [Event Monitor](https://ide.stellarsuite.dev/?panel=event-monitor&mode=simulate)
+Explore advanced simulation with a multi-signature vault contract. This contract requires multiple signers for operations.
 
-### Step 7: Analyzing Results
+1. Load the `multi_sig_vault` contract template
+2. Select the `deposit` function
+3. The contract will prompt for signer authorizations
+4. Simulate the transaction and review the state changes
 
-After running simulations, analyze the results to ensure contract correctness:
+Multi-signature contracts help you understand how authorization works in Soroban simulations.
 
-1. Review the **Transaction Log** for all executed transactions.
-2. Check the **State Diff** to see how contract storage changed.
-3. Examine **Event Logs** for emitted events.
-4. Use the **Coverage Report** to see which lines of code were executed during simulation.
+[Open in IDE →](https://stellar-suite.dev/ide?contract=multi_sig_vault&mode=simulate&step=6)
 
-> 🔗 **Deep-link:** [View Simulation Report](https://ide.stellarsuite.dev/?panel=report&mode=simulate)
+### Step 7: Analyzing Simulation Results
 
-## Conclusion and Next Steps
+After running simulations, use the analysis tools to verify your contract behaves correctly.
 
-Congratulations! You've completed the interactive simulation walkthrough. You now know how to:
+1. Open the **Results** tab to view transaction details
+2. Check the **State Diff** to see how storage changed
+3. Review **Resource Usage** for optimization opportunities
+4. Use **Export** to save results for later reference
 
-- Set up and configure simulation environments
-- Load and deploy smart contracts
-- Interact with deployed contracts
-- Utilize advanced simulation features
-- Analyze simulation results
+[Open in IDE →](https://stellar-suite.dev/ide?contract=hello_world_contract&mode=simulate&step=7)
 
-### Next Steps
+## Troubleshooting
 
-To further enhance your simulation experience:
+### Simulation fails with "Auth error"
 
-- **Integrate with CI/CD:** Add simulation tests to your continuous integration pipeline.
-- **Create Test Suites:** Save simulation configurations as reusable test scenarios.
-- **Team Collaboration:** Share simulation sessions with teammates via shareable links.
-- **Explore Templates:** Check out the [Simulation Templates Library](https://ide.stellarsuite.dev/templates) for common testing patterns.
+If your simulation fails due to authorization errors, ensure you have:
+- Enabled **Mock Auth** in the simulation settings
+- Added the required signer addresses to the authorization list
+- Correctly formatted address strings (should start with `G` and be 56 characters)
 
-> 🚀 **Ready to simulate your own contract?** [Open IDE with Empty Simulation](https://ide.stellarsuite.dev/?mode=simulate)
+### Contract not loading from template
 
-Remember, thorough simulation reduces risks and builds confidence before mainnet deployment. Happy building!
+If the template contract won't load:
+- Check your internet connection – templates are fetched from remote storage
+- Clear your browser cache and reload the IDE
+- Try loading a different template to isolate the issue
+
+### Resource limit exceeded during simulation
+
+If you see resource warnings or failures:
+- Reduce the input values being passed to the function
+- Optimize your contract's logic to use fewer CPU instructions
+- Check for unbounded loops or infinite recursion in your code
+
+## Next Steps
+
+Now that you've completed the interactive simulation walkthrough, here are some ways to continue your learning:
+
+- **[Advanced Simulation Guide](../simulation-features.md)** – Learn about forking mainnet, gas profiling, and state-diff analysis
+- **[Smart Contract Testing](guides/smart-contract-testing.md)** – Deep dive into writing unit tests for your contracts
+- **[EVM to Soroban Guide](guides/evm-to-soroban.md)** – If you're migrating from Ethereum, see how patterns translate
+- **[Simulation History](https://stellar-suite.dev/ide?panel=history&mode=simulate)** – Explore past simulations and compare results
