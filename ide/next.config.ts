@@ -1,7 +1,4 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-
-const configDir = path.dirname(fileURLToPath(import.meta.url));
+import type { NextConfig } from "next";
 
 const cspHeader = `
   default-src 'self';
@@ -10,20 +7,15 @@ const cspHeader = `
   img-src 'self' blob: data:;
   font-src 'self' data:;
   worker-src 'self' blob:;
+  connect-src 'self' https: wss:;
   object-src 'none';
   base-uri 'self';
   form-action 'self';
   frame-ancestors 'none';
-  connect-src 'self' https: wss:;
   upgrade-insecure-requests;
-`.replace(/\n/g, "");
+`.replace(/\s{2,}/g, ' ').trim();
 
-const nextConfig = {
-  output: "standalone",
-  outputFileTracingRoot: configDir,
-  turbopack: {
-    root: configDir,
-  },
+const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
@@ -33,23 +25,11 @@ const nextConfig = {
   async headers() {
     return [
       {
-        source: "/(.*)",
+        source: '/(.*)',
         headers: [
           {
-            key: "Content-Security-Policy",
+            key: 'Content-Security-Policy',
             value: cspHeader,
-          },
-          {
-            key: "X-Content-Type-Options",
-            value: "nosniff",
-          },
-          {
-            key: "X-Frame-Options",
-            value: "DENY",
-          },
-          {
-            key: "Referrer-Policy",
-            value: "strict-origin-when-cross-origin",
           },
         ],
       },
