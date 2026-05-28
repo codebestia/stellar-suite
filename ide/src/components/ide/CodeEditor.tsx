@@ -22,7 +22,6 @@ import { symbolIndexer } from "@/lib/symbolIndexer";
 import Editor, { OnChange, OnMount } from "@monaco-editor/react";
 import type * as Monaco from "monaco-editor";
 import React, { Suspense, useEffect, useRef, useState } from "react";
-import { analyzeMathSafety } from "../../lib/mathSafetyAnalyzer";
 import { useMathSafetyStore } from "../../store/useMathSafetyStore";
 import { useUserSettingsStore } from "@/store/useUserSettingsStore";
 import { Breadcrumbs } from "@/components/ide/Breadcrumbs";
@@ -35,6 +34,8 @@ import "@/styles/editor-gutter.css";
 import { referenceProvider } from "@/lib/referenceProvider";
 import { useLiveShare } from "@/hooks/useLiveShare";
 import { registerRustHoverProvider } from "@/lib/rustHoverProvider";
+import { useAnalysisWorker } from "@/hooks/useAnalysisWorker";
+import type { Diagnostic as WorkerDiagnostic } from "@/features/ide/workers/AnalysisWorker";
 
 interface CodeEditorProps {
   onCursorChange?: (line: number, col: number) => void;
@@ -76,81 +77,36 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ onCursorChange, onSave }) => {
     filePath: activeFileId,
   });
 
+  // #799 analysis offloaded to AnalysisWorker — main thread unblocked
+  const { analyze } = useAnalysisWorker({
+    wasmUrl: "/workers/analysis.worker.js",
+    onResult: (_fileUri: string, _version: number, diags: WorkerDiagnostic[]) => {
+      // Convert worker diagnostics to store format
+      const convertedDiags = diags.map((d) => ({
+        fileId: _fileUri,
+        line: d.startLineNumber,
+        column: d.startColumn,
+        endLine: d.endLineNumber,
+        endColumn: d.endColumn,
+        message: d.message,
+        severity: d.severity === 4 ? "warning" : d.severity === 2 ? "info" : "error",
+        code: typeof d.code === "string" ? d.code : d.code?.toString(),
+      }));
+      setMathDiagnostics(convertedDiags);
+    },
+  });
+
   // Keep a live ref to files so the rename provider always sees the latest state
   const filesRef = useRef(files);
   useEffect(() => {
     filesRef.current = files;
   }, [files]);
 
-  useEffect(() => {
+useEffect(() => {
     activeFileIdRef.current = activeFileId;
   }, [activeFileId]);
 
-  // Dispose models when tabs are closed
-  useEffect(() => {
-    const monaco = monacoRef.current;
-    if (!monaco) return;
-
-    const openFileIds = new Set(openTabs.map((tab) => tab.path.join("/")));
-
-    for (const model of monaco.editor.getModels()) {
-      const modelPath = decodeURIComponent(model.uri.path).replace(/^\/+/, "");
-      
-      let isUsed = false;
-      for (const openFileId of openFileIds) {
-        if (modelPath === openFileId || model.uri.toString().endsWith(openFileId)) {
-          isUsed = true;
-          break;
-        }
-      }
-
-      if (!isUsed) {
-        monaco.editor.setModelMarkers(model, "diagnostics", []);
-        model.dispose();
-      }
-    }
-  }, [openTabs]);
-
-  // Unmount cleanup logic
-  useEffect(() => {
-    return () => {
-      const editor = editorRef.current;
-      const currentFileId = activeFileIdRef.current;
-
-      if (editor && currentFileId) {
-        const viewState = editor.saveViewState();
-        if (viewState) {
-          saveViewState(currentFileId, viewState);
-        }
-      }
-
-      coverageDecorations.current?.clear();
-      coverageDecorations.current = null;
-
-      // Dispose all disposables (event listeners, language features, etc.)
-      for (const disposable of disposablesRef.current.splice(0)) {
-        disposable.dispose();
-      }
-
-      // Dispose all active models to prevent memory leaks
-      const monaco = monacoRef.current;
-      if (monaco) {
-        for (const model of monaco.editor.getModels()) {
-          monaco.editor.setModelMarkers(model, "diagnostics", []);
-          model.dispose();
-        }
-      }
-
-      // Clear references in singleton providers to let garbage collection clean up the editor instance
-      definitionProvider.initialize(null as any, null as any);
-      referenceProvider.initialize(null as any);
-
-      setJumpToLine(null);
-      editorRef.current = null;
-      monacoRef.current = null;
-    };
-  }, [saveViewState, setJumpToLine]);
-
+  // Compute activeFile early (used by both math analysis and render)
   const activeFile = React.useMemo(() => {
     const findNode = (
       nodes: FileNode[],
@@ -166,6 +122,32 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ onCursorChange, onSave }) => {
     };
     return findNode(files, activeTabPath);
   }, [files, activeTabPath]);
+
+  // #799 analysis offloaded to AnalysisWorker — main thread unblocked
+  const { analyze } = useAnalysisWorker({
+    wasmUrl: "/workers/analysis.worker.js",
+    onResult: (_fileUri: string, _version: number, diags: WorkerDiagnostic[]) => {
+      const convertedDiags = diags.map((d) => ({
+        fileId: _fileUri,
+        line: d.startLineNumber,
+        column: d.startColumn,
+        endLine: d.endLineNumber,
+        endColumn: d.endColumn,
+        message: d.message,
+        severity: d.severity === 4 ? "warning" : d.severity === 2 ? "info" : "error",
+        code: typeof d.code === "string" ? d.code : d.code?.toString(),
+      }));
+      setMathDiagnostics(convertedDiags);
+    },
+  });
+
+  // Trigger math safety analysis via worker when active file changes
+  useEffect(() => {
+    if (config.enabled && activeFile?.content) {
+      const version = Date.now();
+      analyze(activeFile.content, activeFileId, version);
+    }
+  }, [activeFile?.content, config.enabled, activeFileId, analyze]);
 
   // User settings (font size and theme)
   const { fontSize, theme: currentTheme } = useUserSettingsStore();
@@ -209,16 +191,6 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ onCursorChange, onSave }) => {
     if (!monaco) return;
 
     const virtualId = activeFileId;
-
-    // Run math safety analysis if enabled
-    if (config.enabled && activeFile?.content) {
-      const mathDiags = analyzeMathSafety(
-        activeFile.content,
-        virtualId,
-        config,
-      );
-      setMathDiagnostics(mathDiags);
-    }
 
     // Combine cargo diagnostics with math safety diagnostics
     const allDiagnostics = getAllDiagnostics(
