@@ -99,7 +99,7 @@ Route (app)                               Size  First Load JS
 > npm run sri && next build
 
 > vite_react_shadcn_ts@0.0.0 sri
-> node scripts/generate-sri.mifest.mjs
+> node scripts/generate-sri.mjs
 
 [SRI] Scanning public/ for WASM and worker assets...
 [SRI] /workers/compile.worker.js                 → sha384-8lA/RqADmaMFkngx3RJMJ+R...

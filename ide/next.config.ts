@@ -21,7 +21,7 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   outputFileTracingRoot: __dirname,
   async headers() {
-    // #794 CSRF security headers
+    // #799 CSRF security headers + #799 required for SharedArrayBuffer and WASM in Web Workers
     return [
       {
         source: '/(.*)',
@@ -36,6 +36,8 @@ const nextConfig: NextConfig = {
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
           { key: 'X-DNS-Prefetch-Control', value: 'on' },
           { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+          { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
         ],
       },
       {
