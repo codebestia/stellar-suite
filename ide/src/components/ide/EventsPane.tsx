@@ -11,7 +11,7 @@ import { Radio, Search, Trash2, X, AlertCircle, ChevronDown } from "lucide-react
 import { useContractEvents } from "@/hooks/useContractEvents";
 import { useWorkspaceStore } from "@/store/workspaceStore";
 import type { ContractEvent } from "@/utils/eventSubscriber";
-import { RedactedText, RedactionToggle } from "@/components/ide/LogRedactor";
+import { LogRedactor, useRedaction } from "@/components/ide/LogRedactor";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -57,6 +57,14 @@ interface EventRowProps {
 
 const EventRow = React.memo(function EventRow({ event, index }: EventRowProps) {
   const [expanded, setExpanded] = useState(false);
+  const { apply } = useRedaction();
+
+  const safeData = useMemo(() => apply(event.data).redacted, [apply, event.data]);
+  const safeContractId = useMemo(
+    () => apply(event.contractId).redacted,
+    [apply, event.contractId],
+  );
+  const safeTxHash = useMemo(() => apply(event.txHash).redacted, [apply, event.txHash]);
 
   // Alternate very-subtle row tinting for scannability
   const rowBg = index % 2 === 0 ? "bg-transparent" : "bg-white/[0.02]";
@@ -91,19 +99,17 @@ const EventRow = React.memo(function EventRow({ event, index }: EventRowProps) {
           {event.topic}
         </span>
 
-        {/* Data preview — single line, truncated, redacted by default */}
-        <RedactedText
-          as="span"
-          text={event.data}
-          className="min-w-0 flex-1 truncate text-white/50"
-        />
+        {/* Data preview — single line, truncated */}
+        <span className="min-w-0 flex-1 truncate text-white/50">
+          {safeData}
+        </span>
 
         {/* Tx hash */}
         <span
           className="shrink-0 text-white/25 opacity-0 transition-opacity group-hover:opacity-100"
-          title={event.txHash}
+          title={safeTxHash}
         >
-          tx:{shortHash(event.txHash)}
+          tx:{shortHash(safeTxHash)}
         </span>
       </button>
 
@@ -115,10 +121,10 @@ const EventRow = React.memo(function EventRow({ event, index }: EventRowProps) {
             <RedactedText as="div" text={event.id} className="break-all text-white/60" />
 
             <dt className="text-white/30">contract</dt>
-            <RedactedText as="div" text={event.contractId} className="break-all text-white/60" />
+            <dd className="break-all text-white/60">{safeContractId}</dd>
 
             <dt className="text-white/30">tx</dt>
-            <RedactedText as="div" text={event.txHash} className="break-all text-white/60" />
+            <dd className="break-all text-white/60">{safeTxHash}</dd>
 
             <dt className="text-white/30">time</dt>
             <dd className="text-white/60">{event.timestamp}</dd>
@@ -128,11 +134,9 @@ const EventRow = React.memo(function EventRow({ event, index }: EventRowProps) {
 
             <dt className="self-start text-white/30">data</dt>
             <dd>
-              <RedactedText
-                as="pre"
-                text={prettyData(event.data)}
-                className="overflow-x-auto whitespace-pre-wrap break-all text-[#4ADE80]/90"
-              />
+              <pre className="overflow-x-auto whitespace-pre-wrap break-all text-[#4ADE80]/90">
+                {prettyData(safeData)}
+              </pre>
             </dd>
           </dl>
         </div>
@@ -277,7 +281,7 @@ export function EventsPane() {
         )}
 
         {/* Redaction toggle */}
-        <RedactionToggle size="sm" />
+        <LogRedactor />
 
         {/* Clear log button */}
         <button
