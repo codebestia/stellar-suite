@@ -55,6 +55,7 @@ export class CompilationWorker {
       this.cancelAndReject(
         id,
         `Build cancelled after exceeding the ${Math.round(timeoutMs / 1000)}s time limit.`,
+        true,
       );
     },
     onMemoryExceeded: (id, memoryMb, limitMb) => {
@@ -179,6 +180,7 @@ export class CompilationWorker {
     if (!job) return;
 
     const error = new Error(message);
+    error.name = terminateWorker ? 'ResourceLimitError' : 'CancelError';
     this.resourceMonitor.stop(id);
     this.jobs.delete(id);
 

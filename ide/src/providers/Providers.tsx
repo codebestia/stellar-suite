@@ -27,6 +27,9 @@ export function Providers({ children }: { children: ReactNode }) {
           <TooltipProvider>
             {children}
             <WalletPermissionPrompt />
+            <RedactionProvider>
+              {children}
+            </RedactionProvider>
           </TooltipProvider>
         </ThemeProvider>
       </QueryProvider>
