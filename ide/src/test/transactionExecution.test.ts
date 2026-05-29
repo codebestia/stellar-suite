@@ -59,6 +59,18 @@ vi.mock("@stellar/stellar-sdk/rpc", () => ({
   Server: vi.fn(),
 }));
 
+vi.mock("@/utils/XdrValidator", () => ({
+  assertValidTransactionEnvelopeXdr: vi.fn((xdr, passphrase) => {
+    fromXDR(xdr, passphrase);
+    return {
+      transaction: {
+        sign: transactionSign,
+        toXDR: toXdr,
+      },
+    };
+  }),
+}));
+
 import {
   createWalletSigningDelegator,
   DEFAULT_TRANSACTION_POLL_INTERVAL_MS,
