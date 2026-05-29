@@ -25,6 +25,8 @@ export function Providers({ children }: { children: ReactNode }) {
           disableTransitionOnChange
         >
           <TooltipProvider>
+            {children}
+            <WalletPermissionPrompt />
             <RedactionProvider>
               {children}
             </RedactionProvider>
