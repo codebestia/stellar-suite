@@ -194,6 +194,7 @@ export const instantiateContract = async ({
     webWalletPublicKey,
     walletType,
     networkPassphrase,
+    intent: { kind: "deploy", step: "instantiate", wasmHash },
   });
 
   const signedXdr = await signTransaction(assembledTx.toXDR());

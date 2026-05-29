@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ReactNode, useState, useEffect } from "react";
 import { registerServiceWorker } from "@/utils/registerServiceWorker";
+import { WalletPermissionPrompt } from "@/components/wallet/WalletPermissionPrompt";
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
@@ -28,6 +29,7 @@ export function Providers({ children }: { children: ReactNode }) {
         >
           <TooltipProvider>
             {children}
+            <WalletPermissionPrompt />
           </TooltipProvider>
         </ThemeProvider>
       </QueryClientProvider>
