@@ -1,72 +1,285 @@
 "use client";
 
-import React, { useState } from "react";
-import Navbar from "@/components/Navbar";
+import React, { useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { toast } from "sonner";
+import { ChevronUp, Loader2, Plus, Sparkles } from "lucide-react";
+
 import Footer from "@/components/Footer";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+import { useRoadmap } from "@/hooks/use-roadmap";
+import {
+  FeatureRequestInput,
+  RoadmapItem,
+  STATUS_META,
+  STATUS_ORDER,
+  featureRequestSchema,
+} from "@/lib/roadmap";
 
 export default function RoadmapPage() {
-  const [features, setFeatures] = useState([
-    { id: 1, title: "Dark Mode Support", status: "Done", votes: 120 },
-    { id: 2, title: "Soroban CLI Integration", status: "In Progress", votes: 85 },
-    { id: 3, title: "Advanced Testnet Faucet", status: "Planned", votes: 45 },
-    { id: 4, title: "Template Generator", status: "Planned", votes: 30 },
-  ]);
+  const { isLoaded, items, votesFor, hasVoted, toggleVote, submitRequest } =
+    useRoadmap();
 
-  const handleVote = (id: number) => {
-    setFeatures(features.map(f => f.id === id ? { ...f, votes: f.votes + 1 } : f));
-  };
+  // Group + sort items by status; most-voted first within each column.
+  const columns = useMemo(() => {
+    return STATUS_ORDER.map((status) => ({
+      status,
+      items: items
+        .filter((item) => item.status === status)
+        .sort((a, b) => votesFor(b) - votesFor(a)),
+    }));
+  }, [items, votesFor]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <Navbar />
-      <main className="flex-1 max-w-6xl w-full mx-auto py-12 px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-foreground mb-4">Interactive Roadmap</h1>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Community-driven product development. View our progress, vote on feature requests, or submit your own ideas to help shape the future of Stellar Suite.
+      <main
+        id="main-content"
+        className="flex-1 w-full max-w-6xl mx-auto py-12 px-4 sm:px-6 lg:px-8"
+      >
+        <header className="mb-10 text-center">
+          <h1 className="text-4xl font-bold tracking-tight text-foreground">
+            Roadmap &amp; Feature Requests
+          </h1>
+          <p className="mx-auto mt-3 max-w-2xl text-lg text-muted-foreground">
+            See what we&apos;re building, upvote the ideas you care about, and
+            submit your own to help shape Stellar Kit.
           </p>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {["Planned", "In Progress", "Done"].map(status => (
-            <div key={status} className="bg-card shadow-sm border rounded-xl p-6 flex flex-col">
-              <h2 className="text-xl font-semibold mb-4 border-b pb-3 text-card-foreground">
-                {status} <span className="text-sm font-normal text-muted-foreground ml-2">({features.filter(f => f.status === status).length})</span>
-              </h2>
-              <div className="space-y-4 flex-1">
-                {features.filter(f => f.status === status).map(feature => (
-                  <div key={feature.id} className="p-4 border rounded-lg bg-background flex flex-col justify-between hover:border-primary/50 transition-colors">
-                    <h3 className="font-medium mb-3 text-foreground">{feature.title}</h3>
-                    <div className="flex items-center justify-between mt-auto pt-2">
-                      <span className="text-sm text-muted-foreground font-medium">{feature.votes} votes</span>
-                      <button 
-                        onClick={() => handleVote(feature.id)}
-                        className="text-sm bg-primary/10 text-primary px-3 py-1.5 rounded-md hover:bg-primary/20 transition-colors flex items-center font-medium"
-                      >
-                        <span className="mr-1">▲</span> Upvote
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {features.filter(f => f.status === status).length === 0 && (
-                  <div className="text-center py-8 text-muted-foreground text-sm">
-                    No items in this column.
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+          <div className="mt-6 flex justify-center">
+            <SubmitRequestDialog onSubmit={submitRequest} />
+          </div>
+        </header>
 
-        <div className="mt-12 bg-primary/5 rounded-xl p-8 text-center border border-primary/10">
-          <h3 className="text-2xl font-semibold mb-3">Have a Feature Request?</h3>
-          <p className="text-muted-foreground mb-6">We are always looking for ways to improve our tools for the Stellar community.</p>
-          <button className="bg-primary text-primary-foreground px-6 py-3 rounded-md font-medium hover:opacity-90 transition-opacity">
-            Submit Request
-          </button>
-        </div>
+        {!isLoaded ? (
+          <div className="flex items-center justify-center py-24 text-muted-foreground">
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" aria-hidden />
+            Loading roadmap…
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+            {columns.map((column) => {
+              const meta = STATUS_META[column.status];
+              return (
+                <section
+                  key={column.status}
+                  aria-label={meta.label}
+                  className="flex flex-col rounded-xl border bg-card/40 p-4"
+                >
+                  <div className="mb-4 flex items-center gap-2 border-b pb-3">
+                    <span
+                      className={cn("h-2.5 w-2.5 rounded-full", meta.dotClass)}
+                      aria-hidden
+                    />
+                    <h2 className="font-semibold text-card-foreground">
+                      {meta.label}
+                    </h2>
+                    <span className="ml-auto text-sm text-muted-foreground">
+                      {column.items.length}
+                    </span>
+                  </div>
+
+                  <div className="flex-1 space-y-3">
+                    {column.items.map((item) => (
+                      <RoadmapCard
+                        key={item.id}
+                        item={item}
+                        votes={votesFor(item)}
+                        voted={hasVoted(item.id)}
+                        onVote={() => toggleVote(item.id)}
+                      />
+                    ))}
+                    {column.items.length === 0 ? (
+                      <p className="py-8 text-center text-sm text-muted-foreground">
+                        Nothing here yet.
+                      </p>
+                    ) : null}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        )}
       </main>
       <Footer />
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Roadmap card                                                               */
+/* -------------------------------------------------------------------------- */
+
+function RoadmapCard({
+  item,
+  votes,
+  voted,
+  onVote,
+}: {
+  item: RoadmapItem;
+  votes: number;
+  voted: boolean;
+  onVote: () => void;
+}) {
+  const meta = STATUS_META[item.status];
+  return (
+    <Card className="transition-colors hover:border-primary/40">
+      <CardHeader className="space-y-2 pb-3">
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="font-medium leading-snug text-foreground">
+            {item.title}
+          </h3>
+          {item.community ? (
+            <Badge variant="outline" className="shrink-0 gap-1">
+              <Sparkles className="h-3 w-3" aria-hidden />
+              Community
+            </Badge>
+          ) : null}
+        </div>
+        {item.description ? (
+          <p className="text-sm text-muted-foreground">{item.description}</p>
+        ) : null}
+      </CardHeader>
+      <CardContent className="pb-3">
+        <span
+          className={cn(
+            "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+            meta.badgeClass,
+          )}
+        >
+          {meta.label}
+        </span>
+      </CardContent>
+      <CardFooter className="justify-between border-t pt-3">
+        <span className="text-sm text-muted-foreground">
+          {votes} {votes === 1 ? "vote" : "votes"}
+        </span>
+        <Button
+          variant={voted ? "default" : "outline"}
+          size="sm"
+          onClick={onVote}
+          aria-pressed={voted}
+          aria-label={voted ? `Remove your vote from ${item.title}` : `Upvote ${item.title}`}
+        >
+          <ChevronUp className="mr-1 h-4 w-4" aria-hidden />
+          {voted ? "Voted" : "Upvote"}
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Submit feature request                                                     */
+/* -------------------------------------------------------------------------- */
+
+function SubmitRequestDialog({
+  onSubmit,
+}: {
+  onSubmit: (input: FeatureRequestInput) => RoadmapItem;
+}) {
+  const [open, setOpen] = useState(false);
+  const {
+    register,
+    handleSubmit,
+    reset,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<FeatureRequestInput>({
+    resolver: zodResolver(featureRequestSchema),
+    defaultValues: { title: "", description: "" },
+  });
+
+  const description = watch("description") ?? "";
+
+  const submit = (values: FeatureRequestInput) => {
+    onSubmit(values);
+    toast.success("Feature request submitted", {
+      description: "It's now in the Planned column with your upvote.",
+    });
+    reset();
+    setOpen(false);
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) reset();
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button>
+          <Plus className="mr-2 h-4 w-4" aria-hidden />
+          Submit a feature request
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Submit a feature request</DialogTitle>
+          <DialogDescription>
+            Share an idea with the community. It starts in Planned and others can
+            upvote it.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit(submit)} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="request-title">Title</Label>
+            <Input
+              id="request-title"
+              placeholder="e.g. Multi-sig transaction builder"
+              aria-invalid={!!errors.title}
+              {...register("title")}
+            />
+            {errors.title ? (
+              <p className="text-sm text-destructive">{errors.title.message}</p>
+            ) : null}
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="request-description">Description (optional)</Label>
+              <span className="text-xs text-muted-foreground">
+                {description.length}/280
+              </span>
+            </div>
+            <Textarea
+              id="request-description"
+              rows={4}
+              placeholder="What problem would this solve?"
+              aria-invalid={!!errors.description}
+              {...register("description")}
+            />
+            {errors.description ? (
+              <p className="text-sm text-destructive">
+                {errors.description.message}
+              </p>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
+              ) : null}
+              Submit request
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
