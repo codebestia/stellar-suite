@@ -23,6 +23,8 @@ import { HealthAlertsService } from './services/HealthAlerts';
 import { getLatencyMonitor } from './ui/networkStatusBar';
 import { registerSorobanCompletionProvider } from './providers/SorobanCompletionProvider';
 import { SecretSyncService } from './services/SecretSyncService';
+import { AccountSyncService } from './services/AccountSync';
+import { QuickDeployCommand } from './commands/QuickDeploy';
 
 let sidebarProvider: SidebarViewProvider | undefined;
 
@@ -42,6 +44,8 @@ export async function activate(context: vscode.ExtensionContext) {
         
         registerOpenInWebIDECommand(context);
         const secretSyncService = new SecretSyncService(context);
+        const accountSyncService = new AccountSyncService(context);
+        await QuickDeployCommand.register(context);
 
         outputChannel.appendLine('[Extension] Checking for Stellar CLI in PATH...');
         const cliPath = await SorobanCliService.findCliPath();
@@ -155,6 +159,19 @@ export async function activate(context: vscode.ExtensionContext) {
             return showNetworkHealth();
         });
 
+        // Account Sync: add a new account interactively via the command palette.
+        const syncAccountCommand = vscode.commands.registerCommand('stellar.syncAccount', async () => {
+            const name = await vscode.window.showInputBox({ prompt: 'Account name', placeHolder: 'e.g. dev-wallet' });
+            if (!name) { return; }
+            const publicKey = await vscode.window.showInputBox({ prompt: 'Public key (G…)', placeHolder: 'GABC…' });
+            if (!publicKey) { return; }
+            const privateKey = await vscode.window.showInputBox({ prompt: 'Private key (S…)', placeHolder: 'SABC…', password: true });
+            if (!privateKey) { return; }
+            const network = await vscode.window.showQuickPick(['testnet', 'futurenet', 'mainnet'], { placeHolder: 'Select network' });
+            if (!network) { return; }
+            await accountSyncService.addAccount(name, publicKey, privateKey, network);
+        });
+
         const watcher = vscode.workspace.createFileSystemWatcher('**/{Cargo.toml,*.wasm}');
         watcher.onDidChange(() => {
             if (sidebarProvider) {
@@ -189,6 +206,7 @@ export async function activate(context: vscode.ExtensionContext) {
             contractInfoCommand,
             analyzeSecurityCommand,
             showNetworkHealthCommand,
+            syncAccountCommand,
             watcher
         );
     } catch (error) {

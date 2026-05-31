@@ -150,6 +150,16 @@
         "command": "stellarSuite.openInWebIDE",
         "title": "Kit Studio: Open in Web IDE",
         "icon": "$(globe)"
+      },
+      {
+        "command": "stellar.quickDeploy",
+        "title": "Kit Studio: Quick Deploy Soroban Contract",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "stellar.syncAccount",
+        "title": "Kit Studio: Sync Stellar Account",
+        "icon": "$(sync)"
       }
     ],
     "menus": {
