@@ -31,6 +31,7 @@ export interface CompileResult {
   ok: boolean;
   status: number;
   output: string;
+  wasmBase64?: string;
 }
 
 interface PendingJob {
@@ -54,6 +55,7 @@ export class CompilationWorker {
       this.cancelAndReject(
         id,
         `Build cancelled after exceeding the ${Math.round(timeoutMs / 1000)}s time limit.`,
+        true,
       );
     },
     onMemoryExceeded: (id, memoryMb, limitMb) => {
@@ -106,7 +108,7 @@ export class CompilationWorker {
       case 'done':
         this.resourceMonitor.stop(msg.id);
         this.jobs.delete(msg.id);
-        job!.resolve({ ok: msg.ok, status: msg.status ?? 0, output: msg.output });
+        job!.resolve({ ok: msg.ok, status: msg.status ?? 0, output: msg.output, wasmBase64: msg.wasmBase64 });
         break;
 
       case 'error':
@@ -178,6 +180,7 @@ export class CompilationWorker {
     if (!job) return;
 
     const error = new Error(message);
+    error.name = terminateWorker ? 'ResourceLimitError' : 'CancelError';
     this.resourceMonitor.stop(id);
     this.jobs.delete(id);
 

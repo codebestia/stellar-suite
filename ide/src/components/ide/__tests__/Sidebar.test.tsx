@@ -34,6 +34,22 @@ vi.mock("@/hooks/useDebouncedValue", () => ({
   useDebouncedValue: vi.fn((v: unknown) => v),
 }));
 
+vi.mock("@/hooks/useProjects", () => ({
+  useProjects: vi.fn(() => ({
+    projects: [],
+    filteredProjects: [],
+    selectedTags: [],
+    searchQuery: "",
+    isLoading: false,
+    error: null,
+    toggleTag: vi.fn(),
+    setSearchQuery: vi.fn(),
+    updateProjectTags: vi.fn(),
+    deleteProject: vi.fn(),
+    loadProjects: vi.fn(),
+  })),
+}));
+
 vi.mock("@/utils/searchWalker", () => ({
   searchWalker: vi.fn(() => Promise.resolve({ matches: [], error: null })),
 }));
@@ -44,13 +60,18 @@ vi.mock("@/utils/searchWorkspace", () => ({
 
 vi.mock("@/lib/tutorials/tutorialEngine", () => ({
   tutorialEngine: {
-    getState: vi.fn(() => ({ activeTutorialId: null, currentStepIndex: 0 })),
+    getState: vi.fn(() => ({ activeTutorialId: null, currentStepIndex: 0, completedStepIds: [] })),
     listTutorials: vi.fn(() => []),
     subscribe: vi.fn(() => () => {}),
     evaluateMilestones: vi.fn(),
   },
   createWorkspaceSnapshot: vi.fn(() => ({})),
 }));
+
+// ── Import stores and engines statically ──────────────────────────────────────
+import { useWorkspaceStore } from "@/store/workspaceStore";
+import { useEditorStore } from "@/store/editorStore";
+import { tutorialEngine } from "@/lib/tutorials/tutorialEngine";
 
 // ── Import sidebar components ────────────────────────────────────────────────
 
@@ -83,14 +104,10 @@ const defaultEditorStore = {
 
 describe("Sidebar snapshot — AssetManager", () => {
   beforeEach(() => {
-    const { useWorkspaceStore } = vi.mocked(
-      await import("@/store/workspaceStore")
-    );
     (useWorkspaceStore as ReturnType<typeof vi.fn>).mockReturnValue(defaultWorkspaceStore);
   });
 
   it("renders empty state", () => {
-    const { useWorkspaceStore } = require("@/store/workspaceStore");
     (useWorkspaceStore as ReturnType<typeof vi.fn>).mockReturnValue({
       ...defaultWorkspaceStore,
       files: [],
@@ -100,7 +117,6 @@ describe("Sidebar snapshot — AssetManager", () => {
   });
 
   it("renders with image assets", () => {
-    const { useWorkspaceStore } = require("@/store/workspaceStore");
     (useWorkspaceStore as ReturnType<typeof vi.fn>).mockReturnValue({
       ...defaultWorkspaceStore,
       files: [
@@ -125,12 +141,10 @@ describe("Sidebar snapshot — AssetManager", () => {
 
 describe("Sidebar snapshot — OutlineView", () => {
   beforeEach(() => {
-    const { useEditorStore } = require("@/store/editorStore");
     (useEditorStore as ReturnType<typeof vi.fn>).mockReturnValue(defaultEditorStore);
   });
 
   it("renders 'No file selected' when no active tab", () => {
-    const { useWorkspaceStore } = require("@/store/workspaceStore");
     (useWorkspaceStore as ReturnType<typeof vi.fn>).mockReturnValue({
       ...defaultWorkspaceStore,
       activeTabPath: [],
@@ -141,7 +155,6 @@ describe("Sidebar snapshot — OutlineView", () => {
   });
 
   it("renders non-Rust file placeholder", () => {
-    const { useWorkspaceStore } = require("@/store/workspaceStore");
     (useWorkspaceStore as ReturnType<typeof vi.fn>).mockReturnValue({
       ...defaultWorkspaceStore,
       activeTabPath: ["Cargo.toml"],
@@ -152,7 +165,6 @@ describe("Sidebar snapshot — OutlineView", () => {
   });
 
   it("renders Rust file with symbols", () => {
-    const { useWorkspaceStore } = require("@/store/workspaceStore");
     (useWorkspaceStore as ReturnType<typeof vi.fn>).mockReturnValue({
       ...defaultWorkspaceStore,
       activeTabPath: ["lib.rs"],
@@ -179,7 +191,6 @@ pub fn create_pool(env: Env, name: String) -> u32 { 0 }
 
 describe("Sidebar snapshot — GlobalSearch", () => {
   beforeEach(() => {
-    const { useWorkspaceStore } = require("@/store/workspaceStore");
     (useWorkspaceStore as ReturnType<typeof vi.fn>).mockReturnValue({
       ...defaultWorkspaceStore,
       setActiveTabPath: vi.fn(),
@@ -198,7 +209,6 @@ describe("Sidebar snapshot — GlobalSearch", () => {
 
 describe("Sidebar snapshot — EnhancedSearch", () => {
   beforeEach(() => {
-    const { useWorkspaceStore } = require("@/store/workspaceStore");
     (useWorkspaceStore as ReturnType<typeof vi.fn>).mockReturnValue({
       ...defaultWorkspaceStore,
       setActiveTabPath: vi.fn(),
@@ -217,7 +227,6 @@ describe("Sidebar snapshot — EnhancedSearch", () => {
 
 describe("Sidebar snapshot — TutorialsPane", () => {
   beforeEach(() => {
-    const { useWorkspaceStore } = require("@/store/workspaceStore");
     (useWorkspaceStore as ReturnType<typeof vi.fn>).mockReturnValue({
       ...defaultWorkspaceStore,
     });
@@ -229,10 +238,10 @@ describe("Sidebar snapshot — TutorialsPane", () => {
   });
 
   it("renders active tutorial with steps", () => {
-    const { tutorialEngine } = require("@/lib/tutorials/tutorialEngine");
     (tutorialEngine.getState as ReturnType<typeof vi.fn>).mockReturnValue({
       activeTutorialId: "tutorial-1",
       currentStepIndex: 0,
+      completedStepIds: [],
     });
     (tutorialEngine.listTutorials as ReturnType<typeof vi.fn>).mockReturnValue([
       {

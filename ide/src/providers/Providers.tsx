@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ReactNode, useEffect } from "react";
 import { registerServiceWorker } from "@/utils/registerServiceWorker";
 import { QueryProvider } from "@/providers/QueryProvider";
+import { WalletPermissionPrompt } from "@/components/wallet/WalletPermissionPrompt";
 
 export function Providers({ children }: { children: ReactNode }) {
   // Register the service worker once on first client-side mount.
@@ -26,6 +27,7 @@ export function Providers({ children }: { children: ReactNode }) {
         >
           <TooltipProvider>
             {children}
+            <WalletPermissionPrompt />
           </TooltipProvider>
         </ThemeProvider>
       </QueryProvider>

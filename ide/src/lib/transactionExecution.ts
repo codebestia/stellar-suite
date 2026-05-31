@@ -6,8 +6,13 @@ import { withRpcFailover } from "@/lib/rpcFailover";
 import type { ActiveContext, Identity } from "@/store/useIdentityStore";
 import { assertValidTransactionEnvelopeXdr } from "@/utils/XdrValidator";
 import type { WalletProviderType } from "@/wallet/WalletService";
-import { WalletService } from "@/wallet/WalletService";
+import { WalletAdapter } from "@/lib/wallet/WalletAdapter";
 import { ErrorTranslator } from "./errorTranslator";
+
+export type WalletSignIntent =
+  | { kind: "invoke"; contractId?: string; fnName?: string; network?: string }
+  | { kind: "deploy"; step?: string; wasmHash?: string; network?: string }
+  | { kind: "transaction"; label?: string; network?: string };
 
 export const DEFAULT_TRANSACTION_POLL_INTERVAL_MS = 2_000;
 export const DEFAULT_TRANSACTION_POLL_TIMEOUT_MS = 45_000;
@@ -99,12 +104,14 @@ export const createWalletSigningDelegator = ({
   webWalletPublicKey,
   walletType,
   networkPassphrase,
+  intent,
 }: {
   activeContext: ActiveContext;
   activeIdentity: Identity | null;
   webWalletPublicKey: string | null;
   walletType: WalletProviderType | null;
   networkPassphrase: string;
+  intent: WalletSignIntent;
 }) => {
   return async (transactionXdr: string) => {
     if (!activeContext) {
@@ -128,9 +135,30 @@ export const createWalletSigningDelegator = ({
       throw new Error("No browser wallet is connected.");
     }
 
-    return WalletService.signTransaction(walletType, transactionXdr, {
+    const address = webWalletPublicKey ?? undefined;
+    if (intent.kind === "invoke") {
+      return WalletAdapter.signInvocation(walletType, transactionXdr, {
+        networkPassphrase,
+        address,
+        contractId: intent.contractId,
+        fnName: intent.fnName,
+        network: intent.network,
+      });
+    }
+    if (intent.kind === "deploy") {
+      return WalletAdapter.signDeployment(walletType, transactionXdr, {
+        networkPassphrase,
+        address,
+        wasmHash: intent.wasmHash,
+        step: intent.step,
+        network: intent.network,
+      });
+    }
+    return WalletAdapter.signTransaction(walletType, transactionXdr, {
       networkPassphrase,
-      address: webWalletPublicKey ?? undefined,
+      address,
+      label: intent.label,
+      network: intent.network,
     });
   };
 };
@@ -248,6 +276,7 @@ export const executeWriteTransaction = async ({
     webWalletPublicKey,
     walletType,
     networkPassphrase,
+    intent: { kind: "invoke", contractId, fnName, network },
   });
 
   onStatus?.({

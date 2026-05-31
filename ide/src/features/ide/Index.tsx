@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { contract } from "@stellar/stellar-sdk";
 import { Api, Server } from "@stellar/stellar-sdk/rpc";
 import {
@@ -9,11 +9,13 @@ import {
   Activity,
 } from "lucide-react";
 import { toast } from "sonner";
+import * as Sentry from "@sentry/nextjs";
 
 
 import { StateExplorer } from "@/components/ide/StateExplorer";
 import { ContractPanel } from "@/components/ide/ContractPanel";
 import { DeploymentStepper } from "@/components/ide/DeploymentStepper";
+import { XdrInspector } from "@/components/ide/XdrInspector";
 import { SidebarTab } from "@/store/workspaceStore";
 import { LazySidebar } from "@/components/layout/LazySidebar";
 import { HotkeysModal } from "@/components/ide/HotkeysModal";
@@ -39,7 +41,7 @@ import {
   hasRootTestsDirectory,
   listIntegrationTargets,
 } from "@/lib/integrationTestDiscovery";
-import { instantiateContract } from "@/lib/contractInstantiator";
+import { instantiateContract, uploadWasm } from "@/lib/contractInstantiator";
 import { useDeployedContractsStore } from "@/store/useDeployedContractsStore";
 import useEnvironmentSlotsStore from "@/store/useEnvironmentSlotsStore";
 import { useDeploymentStore } from "@/store/useDeploymentStore";
@@ -84,6 +86,7 @@ import { useTransactionResultsStore } from "@/store/useTransactionResultsStore";
 import { executeWriteTransaction } from "@/lib/transactionExecution";
 import { useWalletStore } from "@/store/walletStore";
 import { SimulationDiff } from "@/components/ide/SimulationDiff";
+import { InteractiveTour } from "@/components/ide/InteractiveTour";
 
 const COMPILE_API_URL =
   process.env.NEXT_PUBLIC_COMPILE_API_URL ?? "/api/compile";
@@ -94,6 +97,19 @@ const toCompilePath = (pathParts: string[]) => {
   }
 
   return pathParts.join("/");
+};
+
+const recordMonitoringBreadcrumb = (
+  category: string,
+  message: string,
+  data?: Record<string, unknown>,
+) => {
+  Sentry.addBreadcrumb({
+    category,
+    message,
+    data,
+    level: "info",
+  });
 };
 
 const flattenProjectFiles = (nodes: FileNode[], parentPath: string[] = []) =>
@@ -279,18 +295,50 @@ export default function Index() {
     null,
   );
 
+  // Pre-signing XDR review state. The inspector is opened with a base64
+  // envelope XDR; the user's approve/reject decision resolves the promise
+  // returned to `instantiateContract`.
+  const [pendingXdr, setPendingXdr] = useState<string | null>(null);
+  const [pendingXdrPassphrase, setPendingXdrPassphrase] = useState<string>("");
+  const xdrResolverRef = useRef<((approved: boolean) => void) | null>(null);
+
+  const resolveXdrReview = useCallback((approved: boolean) => {
+    const resolver = xdrResolverRef.current;
+    xdrResolverRef.current = null;
+    setPendingXdr(null);
+    resolver?.(approved);
+  }, []);
+
+  const requestXdrConfirmation = useCallback(
+    (xdr: string, passphrase: string) =>
+      new Promise<boolean>((resolve) => {
+        xdrResolverRef.current = resolve;
+        setPendingXdrPassphrase(passphrase);
+        setPendingXdr(xdr);
+      }),
+    [],
+  );
+
   const [bottomTab, setBottomTab] = useState<"console" | "events" | "proptest">(
     "console",
   );
   const [rightView, setRightView] = useState<"interact" | "state">("interact");
 
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [sampleLoaded, setSampleLoaded] = useState(false);
 
   useEffect(() => {
     if (files.length === 0) {
       setWizardOpen(true);
     }
   }, [files.length]);
+
+  // Mark a sample as loaded the first time the wizard closes with files present
+  useEffect(() => {
+    if (!wizardOpen && files.length > 0 && !sampleLoaded) {
+      setSampleLoaded(true);
+    }
+  }, [wizardOpen, files.length, sampleLoaded]);
 
   // Propagate shared/workspace environment settings to the personal store
   // once the workspace store has finished rehydrating from IndexedDB.
@@ -445,6 +493,13 @@ export default function Index() {
   );
 
   const handleCompile = useCallback(async () => {
+    recordMonitoringBreadcrumb("ide.build", "Build started", {
+      network,
+      contractId: contractId ? `${contractId.slice(0, 8)}…` : null,
+      environmentSlot: selectedEnvironmentSlot.id,
+      localBuild: useUserSettingsStore.getState().experimentalLocalBuild,
+    });
+
     setIsCompiling(true);
     setBuildState("building");
     clearDiagnostics();
@@ -476,12 +531,21 @@ export default function Index() {
         url: COMPILE_API_URL,
         payload: compilePayload,
         onChunk: appendTerminalOutput,
+        contractName,
+        // Stream-parse diagnostics as chunks arrive so Monaco markers light up
+        // line-by-line during the build instead of waiting for completion.
+        onCompileStart: clearDiagnostics,
+        onDiagnostics: setDiagnostics,
       });
 
-      // Offload diagnostics parsing to worker to keep UI responsive
-      const diagnosticsWorker = getDiagnosticsWorker();
-      const diagnostics = await diagnosticsWorker.parseDiagnostics(result.output, contractName);
-      setDiagnostics(diagnostics);
+      // Belt-and-braces fallback: if the streaming session yielded nothing
+      // (e.g. backend ran without --message-format=json), run the cumulative
+      // parser on the full output so users still see markers.
+      if (useDiagnosticsStore.getState().diagnostics.length === 0) {
+        const diagnosticsWorker = getDiagnosticsWorker();
+        const diagnostics = await diagnosticsWorker.parseDiagnostics(result.output, contractName);
+        setDiagnostics(diagnostics);
+      }
 
       if (!result.ok) {
         throw new Error(
@@ -508,6 +572,17 @@ export default function Index() {
         setBuildState("idle");
       } else {
         const message = error instanceof Error ? error.message : "Build failed";
+        Sentry.captureException(error instanceof Error ? error : new Error(message), {
+          tags: {
+            flow: "build",
+            network,
+            environmentSlot: selectedEnvironmentSlot.id,
+          },
+          extra: {
+            contractId: contractId ? `${contractId.slice(0, 8)}…` : null,
+            localBuild: useUserSettingsStore.getState().experimentalLocalBuild,
+          },
+        });
         appendTerminalOutput(`Build failed: ${message}\r\n`);
         setBuildState("error");
         addAuditLog({
@@ -740,6 +815,18 @@ export default function Index() {
           onStatus: (s) => {
             appendTerminalOutput(`  [instantiate] ${s.message}\r\n`);
           },
+          onConfirmXdr: async (xdr) => {
+            appendTerminalOutput(
+              "  [instantiate] Awaiting user approval of decoded XDR…\r\n",
+            );
+            const approved = await requestXdrConfirmation(xdr, networkPassphrase);
+            appendTerminalOutput(
+              approved
+                ? "  [instantiate] XDR approved — proceeding to sign.\r\n"
+                : "  [instantiate] XDR rejected — aborting signature.\r\n",
+            );
+            return approved;
+          },
         });
 
       setContractId(newContractId);
@@ -785,6 +872,7 @@ export default function Index() {
       auditUser,
       contractName,
       network,
+      requestXdrConfirmation,
       setContractId,
       setDeploymentStep,
       setPendingWasmHash,
@@ -797,6 +885,12 @@ export default function Index() {
    *   Phase 2 — createContract         → contractId (C...)
    */
   const handleDeploy = useCallback(async () => {
+    recordMonitoringBreadcrumb("ide.deploy", "Deploy started", {
+      network,
+      contractId: contractId ? `${contractId.slice(0, 8)}…` : null,
+      environmentSlot: selectedEnvironmentSlot.id,
+    });
+
     appendTerminalOutput(`[env: ${selectedEnvironmentSlot.id}]\r\n`);
     if (
       selectedEnvironmentSlot.cargoFeatures &&
@@ -833,53 +927,106 @@ export default function Index() {
     setTerminalExpanded(true);
     appendTerminalOutput(`> Deploying to ${network}…\r\n`);
 
+    // Traverses virtual file nodes to find the wasm file matching contract name
+    const findWasmFile = (nodes: FileNode[], cName: string): FileNode | null => {
+      for (const node of nodes) {
+        if (node.type === "file" && node.name.endsWith(".wasm") && node.name.toLowerCase().includes(cName.toLowerCase())) {
+          return node;
+        }
+        if (node.type === "folder" && node.children) {
+          const found = findWasmFile(node.children, cName);
+          if (found) return found;
+        }
+      }
+      const firstWasm = (nodesList: FileNode[]): FileNode | null => {
+        for (const node of nodesList) {
+          if (node.type === "file" && node.name.endsWith(".wasm")) return node;
+          if (node.type === "folder" && node.children) {
+            const found = firstWasm(node.children);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+      return firstWasm(nodes);
+    };
+
     try {
-      // Phase 1: compile + upload WASM
+      // Phase 1: compile WASM
       setDeploymentStep("uploading");
-      appendTerminalOutput("> Compiling and uploading WASM…\r\n");
+      appendTerminalOutput("> Compiling WASM…\r\n");
 
-      const response = await fetch(COMPILE_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(compilePayload),
+      const result = await workerCompile({
+        url: COMPILE_API_URL,
+        payload: compilePayload,
+        onChunk: appendTerminalOutput,
       });
 
-      const processor = createStreamProcessor({
-        onTerminalData: appendTerminalOutput,
-      });
-      const output = await readCompileResponse(response, processor);
-
-      if (!response.ok) {
+      if (!result.ok) {
         throw new Error(
-          output.trim() || `Build failed with status ${response.status}`,
+          result.output.trim() || `Build failed with status ${result.status}`,
         );
       }
 
-      // Extract WASM hash from compile output
-      let wasmHash: string | null = null;
-      try {
-        const parsed = JSON.parse(output) as { contractHash?: string | null };
-        wasmHash = parsed.contractHash ?? null;
-      } catch {
-        const match = output.match(/contract[_\s]?hash[:\s]+([a-f0-9]{64})/i);
-        wasmHash = match?.[1] ?? null;
+      appendTerminalOutput("✓ Compilation finished.\r\n");
+
+      let wasmBase64 = result.wasmBase64;
+      if (!wasmBase64) {
+        const wasmFile = findWasmFile(files, contractName);
+        if (wasmFile && wasmFile.content) {
+          wasmBase64 = wasmFile.content;
+        }
       }
 
-      if (!wasmHash) {
-        throw new Error(
-          "WASM uploaded but no contract hash was returned. " +
-            "Cannot proceed to instantiation.",
-        );
+      if (!wasmBase64) {
+        throw new Error("No WASM binary data found for upload. Make sure compiling produces a .wasm output.");
       }
 
+      // Upload WASM bytes to the network
+      appendTerminalOutput("> Uploading WASM bytes to network…\r\n");
+      const rpcUrl =
+        network === "local"
+          ? useWorkspaceStore.getState().customRpcUrl
+          : (NETWORK_CONFIG[network as NetworkKey]?.horizon ??
+            "https://soroban-testnet.stellar.org:443");
+      const networkPassphrase =
+        NETWORK_CONFIG[network as NetworkKey]?.passphrase ??
+        "Test SDF Network ; September 2015";
+
+      const wasmBytes = Uint8Array.from(atob(wasmBase64), (c) => c.charCodeAt(0));
+
+      const uploadResult = await uploadWasm({
+        wasmBytes,
+        rpcUrl,
+        networkPassphrase,
+        activeContext,
+        activeIdentity,
+        webWalletPublicKey: null,
+        walletType: null,
+        onStatus: (s) => {
+          appendTerminalOutput(`  [upload] ${s.message}\r\n`);
+        },
+      });
+
+      const wasmHash = uploadResult.wasmHash;
       appendTerminalOutput(`✓ WASM uploaded. Hash: ${wasmHash}\r\n`);
-      // Persist hash so the user can retry instantiation without re-uploading
       setPendingWasmHash(wasmHash);
 
       // Phase 2: instantiate contract
       await runInstantiate(wasmHash);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Deployment failed";
+      Sentry.captureException(err instanceof Error ? err : new Error(message), {
+        tags: {
+          flow: "deploy",
+          network,
+          environmentSlot: selectedEnvironmentSlot.id,
+        },
+        extra: {
+          contractId: contractId ? `${contractId.slice(0, 8)}…` : null,
+          deployedContractId: deployedContractId ? `${deployedContractId.slice(0, 8)}…` : null,
+        },
+      });
       setDeploymentStep("error");
       setDeploymentError(message);
       appendTerminalOutput(`✗ Deployment failed: ${message}\r\n`);
@@ -914,6 +1061,10 @@ export default function Index() {
     setContractId,
     setPendingWasmHash,
     setTerminalExpanded,
+    files,
+    workerCompile,
+    activeContext,
+    activeIdentity,
   ]);
 
   const handleTest = useCallback(() => {
@@ -1636,6 +1787,14 @@ export default function Index() {
       {syncStatus === "conflict" && conflictData && (
         <ConflictModal conflictData={conflictData} />
       )}
+      {/* ── Pre-signing XDR review modal ───────────────────────────── */}
+      <XdrInspector
+        open={pendingXdr !== null}
+        xdr={pendingXdr}
+        networkPassphrase={pendingXdrPassphrase}
+        onApprove={() => resolveXdrReview(true)}
+        onReject={() => resolveXdrReview(false)}
+      />
       {/* ── Deployment progress modal ──────────────────────────────── */}
       <DeploymentStepper
         open={isDeployModalOpen}
@@ -1655,6 +1814,8 @@ export default function Index() {
       />
 
       <HotkeysModal open={isHotkeysOpen} onOpenChange={setIsHotkeysOpen} />
+
+      <InteractiveTour sampleLoaded={sampleLoaded} />
 
       {/* ── Pre-signing simulation diff modal ─────────────────────────── */}
       {simulationDiffData && (
